@@ -1,0 +1,143 @@
+import cv2
+def screenshot():
+    cam = cv2.VideoCapture(0)
+    cv2.namedWindow("test")
+    
+    img_counter = 0
+    while True:
+        ret, frame = cam.read()
+        if not ret:
+            print("failed to grab frame")
+            break
+        cv2.imshow("test", frame)
+        k = cv2.waitKey(1)
+        if k%256 == 27:
+            # ESC pressed
+            print("Escape hit, closing...")
+            break
+        elif k%256 == 32:
+            # SPACE pressed
+            img_name = "opencv_frame_{}.png".format(img_counter)
+            cv2.imwrite(img_name, frame)
+            print("Picture Captured!")
+            img_counter+=1
+    cam.release()
+    cv2.destroyAllWindows()
+
+
+    
+#if __name__ == '__main__':
+screenshot()
+
+#%%
+
+import os
+print(os.listdir("D:/New folder/archive"))
+
+train_path = "D:/New folder/archive/train"
+val_path = "D:/New folder/archive/test"
+
+#%%
+
+import matplotlib.pyplot as plt
+def plot_images(img_dir, top=10):
+    all_img_dirs = os.listdir(img_dir)
+    img_files = [os.path.join(img_dir, file) for file in all_img_dirs][:5]
+  
+    plt.figure(figsize=(10, 10))
+  
+    for idx, img_path in enumerate(img_files):
+        plt.subplot(5, 5, idx+1)
+    
+        img = plt.imread(img_path)
+        plt.tight_layout()         
+        plt.imshow(img, cmap='gray') 
+
+#%%
+
+plot_images(train_path+'/fear')
+
+#%%
+
+from tensorflow.keras.preprocessing.image import ImageDataGenerator 
+from tensorflow.keras.utils import to_categorical, plot_model
+from tensorflow.keras import models, layers, regularizers
+
+#%%
+import torch
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
+
+#%%
+
+emotion_labels = sorted(os.listdir(train_path))
+print(emotion_labels)
+
+#%%
+batch_size = 64
+target_size = (48,48)
+
+train_datagen = ImageDataGenerator(rescale=1./255)
+val_datagen   = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+        train_path,
+        target_size=target_size,
+        batch_size=batch_size,
+        color_mode="grayscale",
+        class_mode='categorical',
+        shuffle=True)
+
+val_generator = val_datagen.flow_from_directory(
+        val_path,
+        target_size=target_size,
+        batch_size=batch_size,
+        color_mode="grayscale",
+        class_mode='categorical')
+
+#%%
+
+input_shape = (48,48,1) # img_rows, img_colums, color_channels
+num_classes = 7
+
+
+# Build Model
+model = models.Sequential()
+
+model.add(layers.Conv2D(32, kernel_size=(3, 3), activation='relu', padding='same', input_shape=input_shape)) #, data_format='channels_last', kernel_regularizer=regularizers.l2(0.01)))
+model.add(layers.Conv2D(32, kernel_size=(3, 3), activation='relu', padding='same'))
+model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+model.add(layers.Conv2D(64, kernel_size=(3, 3), activation='relu', padding='same'))
+model.add(layers.Conv2D(64, kernel_size=(3, 3), activation='relu', padding='same'))
+model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+model.add(layers.Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'))
+model.add(layers.Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'))
+model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+model.add(layers.Flatten())
+
+model.add(layers.Dense(512, activation='relu'))
+model.add(layers.Dense(64, activation='relu'))
+
+model.add(layers.Dense(num_classes, activation='softmax'))
+
+model.summary()
+
+#%%
+
+# Compile Model
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+#%%
+
+#Train model
+
+num_epochs = 100
+STEP_SIZE_TRAIN = train_generator.n//train_generator.batch_size
+STEP_SIZE_VAL   = val_generator.n//val_generator.batch_size
+
+# Train Model
+history = model.fit(train_generator, steps_per_epoch=STEP_SIZE_TRAIN, epochs=num_epochs, verbose=1, validation_data=val_generator, validation_steps=STEP_SIZE_VAL)
+
